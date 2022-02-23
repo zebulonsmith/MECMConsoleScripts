@@ -7,6 +7,9 @@ It's used to manage and troubleshoot device's AAD Hybrid Join.
 Join - Instructs a device to join AAD
 Leave - Disjoin AAD
 Status - Returns the current AAD join status
+
+.Parameter SimpleOutput
+Set to 1 to only return the AzureADJoined value from dsregcmd, otherwise the full output is parsed
 #>
 
 Param (
@@ -21,7 +24,8 @@ Param (
 
 $objJoin = "None"
 
-#Attempt to join if requested
+
+#Attempt to join if requested. Pause for a bit to allow the action to complete before proceeding
 if ($Action -eq "Join") {
     $join = dsregcmd /join /debug
 
@@ -33,7 +37,7 @@ if ($Action -eq "Join") {
     Start-Sleep -Seconds 300
 }
 
-#Attempt to leave if requested
+#Attempt to leave if requested. Pause for a bit to allow the action to complete before proceeding
 if ($Action -eq "Leave") {
     $join = dsregcmd /leave /debug
 
@@ -48,15 +52,18 @@ if ($Action -eq "Leave") {
 #Get the current status
 $dsregstatus = dsregcmd /status
 
-
-$TrimmedOutput = ($dsregstatus | where-object {$_ -like "*:*"}).replace(" : ","~") |
+#dsregcmd doesn't give us very easy to parse output. First we'll trim it down and parse out all of the useful values on any line that matches 'name : value'
+#To avoid accidentally parsing out URLs later, replace ' : ' with '~'
+$TrimmedOutput = ($dsregstatus | where-object {$_ -like "* : *"}).replace(" : ","~") |
         ForEach-Object {$_.Trim() }
 
-$objstatus = [PSCustomObject]@{}
 
+#Build a return object out of the dsregcmd output.
+#Using convertfrom-string to change the name~value pairs into object properties
+$objstatus = [PSCustomObject]@{}
 Foreach ($thisStatus in $TrimmedOutput) {
-    $tempStatus = $thisStatus | ConvertFrom-String -Delimiter "~"
-    $objstatus | Add-Member -MemberType NoteProperty -Name $tempStatus.P1 -Value $tempStatus.P2
+        $tempStatus = $thisStatus | ConvertFrom-String -Delimiter "~"
+        $objstatus | Add-Member -MemberType NoteProperty -Name $tempStatus.P1 -Value $tempStatus.P2
 }
 
 #Create a new object that tells us if the device is joined, join status details and the output of dsregcmd /join or /leave if it was specified
