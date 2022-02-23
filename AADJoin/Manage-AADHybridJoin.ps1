@@ -3,6 +3,8 @@
 This script is meant to be used as a wrapper for the dsregcmd.exe utility from within the Configuration Manager console.
 It's used to manage and troubleshoot device's AAD Hybrid Join.
 
+When adding to the MECM Console, be sure that the parameters are configured as 'lists' using the values in the ValidateSet for each
+
 .Parameter Action
 Join - Instructs a device to join AAD
 Leave - Disjoin AAD
@@ -18,8 +20,8 @@ Param (
     [STRING]$Action = "Status",
 
     [Parameter(Mandatory=$false)]
-    [ValidateRange(0,1)]
-    [Int]$SimpleOutput = 0
+    [ValidateSet("True","False")]
+    [STRING]$SimpleOutput = 0
 )
 
 $objJoin = "None"
@@ -74,7 +76,7 @@ $objReturn = [PSCustomObject]@{
 }
 
 #Exit Cleanly
-if ($SimpleOutput -eq 1) {
+if ($SimpleOutput -eq "True") {
     Return ($objReturn | Select-Object -Property azureadjoined)
 } else {
     return $objReturn
