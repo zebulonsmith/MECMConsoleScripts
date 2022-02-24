@@ -1,5 +1,6 @@
 ﻿<#
-Clears the config manager client cache
+.Description
+Clears the config manager cache
 #>
 
 

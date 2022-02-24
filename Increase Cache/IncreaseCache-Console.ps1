@@ -1,33 +1,34 @@
 <#
 .DESCRIPTION
-This script is intended to be used with SCCM >1709's "Run Script" feature when there is a need to temporarily expand the ccmcache size of one or more clients. 
-It will validate that sufficient free space is available, increase the cache size, and then create a reg key in 
+This script is intended to be used with SCCM >1709's "Run Script" feature when there is a need to temporarily expand the ccmcache size of one or more clients.
+It will validate that sufficient free space is available, increase the cache size, and then create a reg key in
 HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce to set cache back to the starting size at the next restart.
 
-Restoring the cache is a best effort operation, but is almost 100% reliable. The RestoreCacheMaxRetryCount and RestoreCacheRetryTimeout 
+Restoring the cache is a best effort operation, but is almost 100% reliable. The RestoreCacheMaxRetryCount and RestoreCacheRetryTimeout
 parameters are used to tune the number of attempts and time spent on each to restore the cache. This cannot be done until the ccmexec
-service is up and running, so the next user logon after the execution of this script will take longer than normal, depending on 
-hardware speed and the level of reliability desired. Normally, issues only occurr on older devices, or when there is some software 
+service is up and running, so the next user logon after the execution of this script will take longer than normal, depending on
+hardware speed and the level of reliability desired. Normally, issues only occurr on older devices, or when there is some software
 issue causing slow performance.
 
-The script will attempt to write a log file to $env:windir\ccm\logs\Script_IncreaseCCMCache.ps1, but falls back to $env:temp 
+The script will attempt to write a log file to $env:windir\ccm\logs\Script_IncreaseCCMCache.ps1, but falls back to $env:temp
 if the CCM\Logs dir is not accessable.
+
+
 
 .PARAMETER CCMCacheSizeMB
 Size in MB that the ccmcache will be temporarily expanded to. Defaults to 30GB if not specified.
 
 .PARAMETER ClearExistingCache
-Set this flag to clear the existing cache. Otherwise, it will be emptied. This is useful if running this script on its own, but can
-cause problems if it's used as a pre-requisite because the ConfigMgr client will download all content before running this script.
+Set this to 1 to clear the existing cache.
 
-.PARAMETER DoNotResetCacheSize
-Set to skip resetting the ccmcache back to its original starting value.
+.PARAMETER ResetCacheSize
+Set to reset the ccmcache back to its original starting value on the next reboot. Writes an entry in HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce.
 
 .PARAMETER RestoreCacheMaxRetryCount
-Number of times to retry to reset the ccmcache
+Number of times to retry to reset the ccmcache. If the client is busy, it may not be able to update the setting. The script will, by default, retry 15 times before failing.
 
 .PARAMETER RestoreCacheRetryTimeout
-Seconds to wait in between attempting to restore
+Seconds to wait in between attempting to restore.
 
 
 #>
@@ -43,11 +44,13 @@ param
 
     #Clears the cache after it's been expanded.
     [Parameter(Mandatory=$false)]
+    [ValidateRange(0,1)]
     [int]$ClearExistingCache = 0,
 
-    # Enable to skip resetting the cache size back to normal
+    # Enable to reset the cache size back to the original size after a reboot
     [Parameter(Mandatory=$false)]
-    [int]$DoNotResetCacheSize = 0,
+    [ValidateRange(0,1)]
+    [int]$ResetCacheSize = 0,
 
     #Number of times to retry to restore the cache after a reboot.
     [Parameter(Mandatory=$false)]
@@ -88,15 +91,15 @@ function Write-LogFile
 		[Parameter(Mandatory = $false)]
 		[ValidateSet("Error", "Warning", "Information")]
 		[string]$LogLevel = "Information",
-		
+
 		[Parameter(Mandatory = $True)]
-		[string]$Path 
+		[string]$Path
 	)
-	
+
 	#Get a pretty date string
 	$FormattedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-	
-	# Write message to error, warning, or verbose pipeline and specify $LevelText 
+
+	# Write message to error, warning, or verbose pipeline and specify $LevelText
 	switch ($Level)
 	{
 		'Error' {
@@ -112,11 +115,11 @@ function Write-LogFile
 			$LevelText = 'INFORMATION:'
 		}
 	}
-	
+
 	"$FormattedDate $LevelText $Message" | Out-File -FilePath $Path -Append
 }
 
-
+<#
 #This tomfoolery is to make up for the fact that we can't use a [SWITCH] param in a console script.
 if ($ClearExistingCache -eq 0) {
     $ClearExistingCache = $false
@@ -128,7 +131,7 @@ if ($DoNotResetCacheSize -eq 0) {
     $DoNotResetCacheSize = $false
 } else {
     $DoNotResetCacheSize = $true
-}
+}#>
 
 #Set up our logging dir. We're going to try writing to the default ccm client log dir, if that doesn't work, write to c:\windows\temp
 if ( (test-path "$($env:windir)\ccm\logs\") ) {
@@ -143,12 +146,11 @@ Write-LogFile -Message "Beginning operation" -LogLevel Information -Path $logfil
 
 
 #region Create COM Objects
-#Create the COM objects that we'll need later on early so that we can fail immediately if something isn't working. 
+#Create the COM objects that we'll need later on early so that we can fail immediately if something isn't working.
 Write-LogFile -Message "Creating COM Object references" -LogLevel Information -Path $logfile
 
 #Create COM object for referencing the ConfigMgr GUI
 Try {
-    
     $UIResource = New-object -ComObject UIResource.UIResourceMgr
 } Catch {
     Write-Logfile -LogLevel Error -Message "Failed to create UIResource.UIResourceMgr COM object. `n $($_.exception.message) $($_.Exception.Hresult)" -path $logfile
@@ -156,7 +158,7 @@ Try {
 }
 
 #Create a COM object for the SMS Client
-Try {    
+Try {
     $SMSClient = New-object -ComObject Microsoft.SMS.Client
 } Catch {
     Write-Logfile -LogLevel Error -Message "Failed to create Microsoft.SMS.Client COM object. `n $($_.exception.message) $($_.Exception.Hresult)" -Path $logfile
@@ -201,7 +203,7 @@ Write-LogFile -Message "CCMCache drive is $($CachePath.Drive.Root) ." -LogLevel 
     } else {
         Write-LogFile "Found $($AvailableFreeSpace) on drive $($InstallPath.Drive.Root)" -LogLevel Information -Path $logfile
     }
-    
+
 
 #endregion
 
@@ -245,7 +247,7 @@ if ([STRING]::IsNullOrEmpty($CurrentCacheSize) ){
 This section creates a RunOnce reg key to set the cache back to its original value 
 on the next reboot, if desired.
 #>
-if (!$DoNotResetCacheSize) {
+if ($ResetCacheSize -eq 1) {
 
 $ResetCacheOneLiner = @"
 powershell.exe -WindowStyle "Hidden" -noprofile -command "& {for (`$i=1; `$i -le $RestoreCacheMaxRetryCount; `$i++){try{((New-object -ComObject UIResource.UIResourceMgr).GetCacheInfo()).TotalSize = $CurrentCacheSize;break} Catch {Start-sleep -Seconds $RestoreCacheRetryTimeout}}}"
@@ -286,11 +288,11 @@ if ( ($UIResource.GetCacheInfo()).TotalSize -ne $CCMCacheSizeMB ) {
     Write-LogFile -Message "Unable to increase cache size. $($ex.HResult)" -LogLevel Error -Path $logfile
     Throw $ex.HResult #-2146233049
 } else {
-    Write-LogFile -Message "Verified that new CCMCache size is $(($UIResource.GetCacheInfo()).TotalSize)MB" -LogLevel Information -Path $logfile    
+    Write-LogFile -Message "Verified that new CCMCache size is $(($UIResource.GetCacheInfo()).TotalSize)MB" -LogLevel Information -Path $logfile
 }
 
 #Clear cache as applicable
-if ($ClearExistingCache) {
+if ($ClearExistingCache -eq 1) {
     Write-LogFile -Message "Clearing CCMCache" -LogLevel Information -Path $logfile
     $ccmcache = $UIResource.GetCacheInfo()
     $CacheElements = $ccmcache.GetCacheElements()

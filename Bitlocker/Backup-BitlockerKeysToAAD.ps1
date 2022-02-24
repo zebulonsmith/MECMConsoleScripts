@@ -30,7 +30,7 @@
 .Example
    Backup-BitlockerKeystoAAD -logdirectory c:\somedir -ReturnType Object
 
-   Logs to c:\somedir and will return an object that includes the results of the backup attempts. 
+   Logs to c:\somedir and will return an object that includes the results of the backup attempts.
 #>
 
 Param (
@@ -39,7 +39,7 @@ Param (
     [string]
     $logdirectory,
 
-    #Set to "Boolean" to return True/False if the operation completed without errors, 
+    #Set to "Boolean" to return True/False if the operation completed without errors,
     #otherwise an object with more information will be returned.
     #Boolean is useful for when this script is used in a config baseline or a package.
     #Object will return more info if the script is ran manually from the console.

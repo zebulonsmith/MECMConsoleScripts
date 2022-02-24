@@ -1,4 +1,13 @@
 <#
+HEY!
+Microsoft has changed the supported methods of changing the Click2Run update channel since this was written, so don't use this thing.
+
+See here. https://docs.microsoft.com/en-us/deployoffice/change-update-channels
+
+#>
+
+
+<#
 .DESCRIPTION
 Sets Office365 to use the specified channel. OfficeC2rClient does not give us much feedback as to whether or not operations have succeeded, so we can't do a lot of error checking.
 Maybe one day we'll have PowerShell cmdlets to do this intead. Troubleshooting can be done by reading the C2R logs in $env:windir\temp.
